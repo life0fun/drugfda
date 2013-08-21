@@ -14,16 +14,23 @@
 
 
 ; this module abstract interface to extract text from pdf
+;(def (second (re-find #"(?smx) \d+\.\s*SECTION\s+(.*)\d+\.\s*SECTION" s)))
+; b/c the same pattern appear in the catalog and in the section, need two pattern
+(def *contrad-matcher* #"(?smx) (?:\d+\s*CONTRAINDICATIONS(?:.*))\d+\s*CONTRAINDICATIONS(?:[\s\n ]*)(.+)\d+\s*WARNINGS\s*AND\s*PRECAUTIONS")
+  
 
 (defn pdftext [pdffile]
   "read passed in pdf file and return the extracted text in a seq"
   (prn "parsing file " pdffile)
   (with-open [pd (PDDocument/load (File. pdffile))
-              dest "./x"
-              wr (BufferedWriter. (OutputStreamWriter. (FileOutputStream. (File. dest))))]
+              wr (BufferedWriter. (OutputStreamWriter. (FileOutputStream. (File. "./tmp/x"))))]
     (let [stripper (PDFTextStripper.)
-          text (.getText stripper pd)]
+          text (.getText stripper pd)
+          contrad (second (re-find *contrad-matcher* text))  ; first grp is the entire match string
+          ]
       (println "Number of pages" (.getNumberOfPages pd))
-      (prn "size : " (count text)))))
+      (prn "size : " (count text))
+      (prn (subs contrad 0 300))
+      (.write wr contrad 0 (count contrad)))))
       ;(.writeText stripper pd wr))))
   
