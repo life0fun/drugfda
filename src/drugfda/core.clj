@@ -12,9 +12,9 @@
 
 
 ; convert a pdf file
-(defn parse-pdf [filename]
+(defn parse-pdf [pdffile outfile]
   "parse a pdf file and return a text sequence"
-  (pdfreader/pdftext filename))
+  (pdfreader/pdftext pdffile outfile))
 
 
 ; the main 
@@ -22,4 +22,4 @@
   (prn " >>>> starting <<<<< ")
   (case (first args)
     "parse" (parse-pdf (rest args))
-    (parse-pdf "./doc/simvastatin.pdf")))
+    (parse-pdf "./doc/simvastatin.pdf" "./x")))

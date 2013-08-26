@@ -2,9 +2,11 @@
 
 This project is aim to retrieve pdf documents and extract meaningful text information and store them into ElasticSearch engine for analyze and search.
 
-## Installation
+## Usage
+  lein run parse pdf-file out-file
 
-## Dependencies
+
+## Dependencies with Maven local repo
 
 There are many tools for PDF text extraction. For example, Apache pdfbox and PDFTextStream from snowtide.
 
