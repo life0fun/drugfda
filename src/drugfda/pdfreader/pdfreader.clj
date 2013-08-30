@@ -5,7 +5,7 @@
   (:import [org.apache.pdfbox.pdmodel PDDocument]
            [org.apache.pdfbox.util PDFTextStripper]
            [java.io File OutputStreamWriter FileOutputStream BufferedWriter])
-  (:require [clj-redis.client :as redis])    ; bring in redis namespace
+  ; (:require [clj-redis.client :as redis])    ; bring in redis namespace
   (:require [clojure.data.json :as json]
             [clojure.java.io :only [reader writer] :refer [reader writer]])
   (:require [clj-time.core :as clj-time :exclude [extend]]
@@ -18,15 +18,22 @@
 ; b/c the same pattern appear in the catalog and in the section, need two pattern
 (def contrad-matcher #"(?smx) (?:\d+\s*CONTRAINDICATIONS(?:.*))\d+\s*CONTRAINDICATIONS(?:[\s\n ]*)(.+)\d+\s*WARNINGS\s*AND\s*PRECAUTIONS")
 (def footer-matcher #"(^USPI-T-\d+|^Reference ID:)") ; "USPI-T-07331210 4 " or "Reference ID: 3209081 "
+; matcher for various sections in the first page.
 (def usage-matcher #"(?smx)(----\s*INDICATIONS\s*AND\s*USAGE\s*----(.+)(?:----\s*DOSAGE\s*AND\s*ADMINISTRATION\s*---))")
-(def dose-matcher #"(?smx)(----\s*DOSAGE\s*AND\s*ADMINISTRATION\s*----(.+)(?:----\s*DOSAGE\s*FORMS\s*AND\s*STRENGTHS\s*---))")
+(def dosage-matcher #"(?smx)(----\s*DOSAGE\s*AND\s*ADMINISTRATION\s*----(.+)(?:----\s*DOSAGE\s*FORMS\s*AND\s*STRENGTHS\s*---))")
 (def doseforms-matcher #"(?smx)(----\s*DOSAGE\s*FORMS\s*AND\s*STRENGTHS\s*----(.+)(?:----\s*CONTRAINDICATIONS\s*---))")
 (def contraind-matcher #"(?smx)(----\s*CONTRAINDICATIONS\s*----(.+)(?:----\s*WARNINGS\s*AND\s*PRECAUTIONS\s*---))")
 (def warnings-matcher #"(?smx)(----\s*WARNINGS\s*AND\s*PRECAUTIONS\s*----(.+)(?:----\s*ADVERSE\s*REACTIONS\s*---))")
 (def reactions-matcher #"(?smx)(----\s*ADVERSE\s*REACTIONS\s*----(.+)(?:----\s*DRUG\s*INTERACTIONS\s*---))")
 (def interactions-matcher #"(?smx)(----\s*DRUG\s*INTERACTIONS\s*----(.+)(?:----\s*USE\s*IN\s*SPECIFIC\s*POPULATIONS\s*---))")
-(def interactions-matcher #"(?smx)(----\s*USE\s*IN\s*SPECIFIC\s*POPULATIONS\s*----(.+)(?:FULL\s*PRESCRIBING\s*INFORMATION:\s*CONTENTS))")
+(def populations-matcher #"(?smx)(----\s*USE\s*IN\s*SPECIFIC\s*POPULATIONS\s*----(.+)(?:FULL\s*PRESCRIBING\s*INFORMATION:\s*CONTENTS))")
 
+
+(defn write-to-file
+  "append a list of paragraphs to an output file"
+  [ofile & paras]
+  (with-open [wr (writer ofile :append true)]
+    (doall (map #(.write wr %) paras))))
 
 
 (defn clean-text [matched-text]
@@ -49,14 +56,20 @@
               wr (BufferedWriter. (OutputStreamWriter. (FileOutputStream. (File. outfile))))]
     (let [stripper (PDFTextStripper.)
           text (.getText stripper pd)
-          usage (str " INDICATIONS AND USAGE "(last (re-find usage-matcher text)))
+          usage (str "\n section :  INDICATIONS AND USAGE " (last (re-find usage-matcher text)))
+          dosage (str "\n section : DOSAGE AND ADMINISTRATION " (last (re-find dosage-matcher text)))
+          contrainds (str "\n secontion : CONTRAINDICATIONS " (last (re-find contraind-matcher text)))
+          warnings (str "\n section : WARNINGS AND PRECAUTIONS " (last (re-find warnings-matcher text)))
+          reactions (str "\n section : ADVERSE REACTIONS " (last (re-find reactions-matcher text)))
+          interactions (str "\n section :  DRUG INTERACTIONS " (last (re-find interactions-matcher text)))
+          populations (str "\n section : DRUG INTERACTIONS " (last (re-find populations-matcher text)))
           ; first reg match group is the entire match string
           contrad (second (re-find contrad-matcher text))
           txtary (clean-text contrad)
           outtxt (str/join "\n", txtary)]
-      (println "Number of pages" (.getNumberOfPages pd))
       ;(prn (subs contrad 0 300))
-      (prn usage)
-      (.write wr outtxt 0 (count outtxt)))))
+      (write-to-file outfile usage dosage contrainds warnings reactions interactions populations outtxt)
+      (println "Number of pages" (.getNumberOfPages pd)))))
+      ;(.write wr outtxt 0 (count outtxt)))))
       ;(.writeText stripper pd wr))))
   
