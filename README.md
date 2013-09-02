@@ -3,6 +3,7 @@
 This project is aim to retrieve pdf documents and extract meaningful text information and store them into ElasticSearch engine for analyze and search.
 
 ## Usage
+  lein run create-drug-index
   lein run parse pdf-file out-file
 
 

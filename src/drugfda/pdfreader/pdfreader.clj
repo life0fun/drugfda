@@ -5,12 +5,13 @@
   (:import [org.apache.pdfbox.pdmodel PDDocument]
            [org.apache.pdfbox.util PDFTextStripper]
            [java.io File OutputStreamWriter FileOutputStream BufferedWriter])
-  ; (:require [clj-redis.client :as redis])    ; bring in redis namespace
+  (:require [clj-redis.client :as redis])    ; bring in redis namespace
   (:require [clojure.data.json :as json]
             [clojure.java.io :only [reader writer] :refer [reader writer]])
   (:require [clj-time.core :as clj-time :exclude [extend]]
             [clj-time.format :refer [parse unparse formatter]]
-            [clj-time.coerce :refer [to-long from-long]]))
+            [clj-time.coerce :refer [to-long from-long]])
+  (:require [drugfda.elastic.es :refer :all]))
 
 
 ; this module abstract interface to extract text from pdf
@@ -30,10 +31,10 @@
 
 
 (defn write-to-file
-  "append a list of paragraphs to an output file"
+  "append a list of paragraphs json to an output file, use pr-str to convert json to string"
   [ofile & paras]
   (with-open [wr (writer ofile :append true)]
-    (doall (map #(.write wr %) paras))))
+    (doall (map #(.write wr (pr-str %)) paras))))  ; eval lazy seq with doall 
 
 
 (defn clean-text [matched-text]
@@ -50,25 +51,27 @@
 
 
 (defn pdftext [pdffile outfile]
-  "read passed in pdf file and return the extracted text in a seq"
+  "read pdf file, extract prescribing hightlight sections and insert extracted sections into ES drug index"
   (prn "parsing file " pdffile)
   (with-open [pd (PDDocument/load (File. pdffile))
               wr (BufferedWriter. (OutputStreamWriter. (FileOutputStream. (File. outfile))))]
     (let [stripper (PDFTextStripper.)
           text (.getText stripper pd)
-          usage (str "\n section :  INDICATIONS AND USAGE " (last (re-find usage-matcher text)))
-          dosage (str "\n section : DOSAGE AND ADMINISTRATION " (last (re-find dosage-matcher text)))
-          contrainds (str "\n secontion : CONTRAINDICATIONS " (last (re-find contraind-matcher text)))
-          warnings (str "\n section : WARNINGS AND PRECAUTIONS " (last (re-find warnings-matcher text)))
-          reactions (str "\n section : ADVERSE REACTIONS " (last (re-find reactions-matcher text)))
-          interactions (str "\n section :  DRUG INTERACTIONS " (last (re-find interactions-matcher text)))
-          populations (str "\n section : DRUG INTERACTIONS " (last (re-find populations-matcher text)))
+          usage (hash-map (keyword (nth sections 1)) (last (re-find usage-matcher text)))
+          dosage (hash-map (keyword (nth sections 2)) (last (re-find dosage-matcher text)))
+          contrainds (hash-map (keyword (nth sections 3)) (last (re-find contraind-matcher text)))
+          precautions (hash-map (keyword (nth sections 4)) (last (re-find warnings-matcher text)))
+          reactions (hash-map (keyword (nth sections 5)) (last (re-find reactions-matcher text)))
+          interactions (hash-map (keyword (nth sections 6)) (last (re-find interactions-matcher text)))
+          populations (hash-map :populations (last (re-find populations-matcher text)))
           ; first reg match group is the entire match string
           contrad (second (re-find contrad-matcher text))
           txtary (clean-text contrad)
           outtxt (str/join "\n", txtary)]
       ;(prn (subs contrad 0 300))
-      (write-to-file outfile usage dosage contrainds warnings reactions interactions populations outtxt)
+      (write-to-file outfile usage dosage contrainds precautions reactions interactions populations outtxt)
+      ; now insert info json sections into es engine
+      (insert-drug-doc "zocor" usage dosage contrainds precautions reactions interactions)
       (println "Number of pages" (.getNumberOfPages pd)))))
       ;(.write wr outtxt 0 (count outtxt)))))
       ;(.writeText stripper pd wr))))
