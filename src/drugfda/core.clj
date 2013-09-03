@@ -14,7 +14,7 @@
 (def help-info (list " -------------------------"
                      "lein run parse pdf-file out-file"
                      "lein run create-drug-index"
-                     "lein run contraindication drugname contraint"
+                     "lein run contraindication [usage dosage contraindication precaution reaction interaction] drugname keyword"
                 ))
 
 ; convert a pdf file
@@ -36,5 +36,5 @@
   (case (first args)
     "parse" (parse-pdf (second args) (last args))
     "create-drug-index" (es/create-drug-index)
-    "contraindication" (search-prescribing-info "contraindication" (second args) (last args))
+    "contraindication" (search-prescribing-info (second args) "contraindication" (last args))
     (parse-pdf "./doc/simvastatin.pdf" "./x")))

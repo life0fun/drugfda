@@ -1,5 +1,5 @@
 (ns drugfda.pdfreader.pdfreader
-  (:require [clojure.string :as str])
+  (:require [clojure.string :as str])  ; clojure str already part of
   (:import [java.io File FileReader]
            [java.util Map Map$Entry List ArrayList Collection Iterator HashMap])
   (:import [org.apache.pdfbox.pdmodel PDDocument]
@@ -29,6 +29,8 @@
 (def interactions-matcher #"(?smx)(----\s*DRUG\s*INTERACTIONS\s*----(.+)(?:----\s*USE\s*IN\s*SPECIFIC\s*POPULATIONS\s*---))")
 (def populations-matcher #"(?smx)(----\s*USE\s*IN\s*SPECIFIC\s*POPULATIONS\s*----(.+)(?:FULL\s*PRESCRIBING\s*INFORMATION:\s*CONTENTS))")
 
+; match the long dash line from pdf, not using ^--+, but think more than 3 dash needs to be cleaned.
+(def leading-dash-matcher #"(?smx)(----+[\s\n ]*)")
 
 (defn write-to-file
   "append a list of paragraphs json to an output file, use pr-str to convert json to string"
@@ -37,17 +39,28 @@
     (doall (map #(.write wr (pr-str %)) paras))))  ; eval lazy seq with doall 
 
 
+; deprecated, already integrated into clean-text
+(defn trim-head-tail
+  "trim the leading and trailing ----\n symbols"
+  [txt]
+  (let [trim-dash (str/replace txt leading-dash-matcher "")
+        trim-newline (str/replace trim-dash #"[\n\t]" " ")]
+    trim-newline))
+
+
 (defn clean-text [matched-text]
-  "clean up wachy text scanned from pdf optical or page footer etc"
+  "clean up wacky text scanned from pdf optical or page footer etc"
   (letfn [(emptyline? [t]
             (= 0 (count (str/trim t))))
           (footer? [t]
             (re-find footer-matcher t))]
     (let [matchedary (str/split-lines matched-text)
           letterary (map (fn [l] (apply str (filter (fn [c] (and (>= (int c) 32) (<= (int c) 126))) l))) matchedary)
-          txtary (filter #(not (or (emptyline? %) (footer? %))) letterary)]
-      (doall (map prn txtary))
-      txtary)))   ; retrn clean ary
+          txtary (filter #(not (or (emptyline? %) (footer? %))) letterary)
+          txtblock (str/join " " txtary)
+          trim-dash (str/replace txtblock leading-dash-matcher "")
+          trim-newline (str/replace trim-dash #"[\n\t]" " ")]
+      trim-newline)))   ; retrn clean ary
 
 
 (defn pdftext [pdffile outfile]
@@ -57,19 +70,25 @@
               wr (BufferedWriter. (OutputStreamWriter. (FileOutputStream. (File. outfile))))]
     (let [stripper (PDFTextStripper.)
           text (.getText stripper pd)
-          usage (hash-map (keyword (nth sections 1)) (last (re-find usage-matcher text)))
-          dosage (hash-map (keyword (nth sections 2)) (last (re-find dosage-matcher text)))
-          contrainds (hash-map (keyword (nth sections 3)) (last (re-find contraind-matcher text)))
-          precautions (hash-map (keyword (nth sections 4)) (last (re-find warnings-matcher text)))
-          reactions (hash-map (keyword (nth sections 5)) (last (re-find reactions-matcher text)))
-          interactions (hash-map (keyword (nth sections 6)) (last (re-find interactions-matcher text)))
-          populations (hash-map :populations (last (re-find populations-matcher text)))
+          usage (hash-map (keyword (nth sections 1)) 
+                          (clean-text (last (re-find usage-matcher text))))
+          dosage (hash-map (keyword (nth sections 2)) 
+                           (clean-text (last (re-find dosage-matcher text))))
+          contrainds (hash-map (keyword (nth sections 3)) 
+                               (clean-text (last (re-find contraind-matcher text))))
+          precautions (hash-map (keyword (nth sections 4)) 
+                                (clean-text (last (re-find warnings-matcher text))))
+          reactions (hash-map (keyword (nth sections 5)) 
+                              (clean-text (last (re-find reactions-matcher text))))
+          interactions (hash-map (keyword (nth sections 6)) 
+                                 (clean-text (last (re-find interactions-matcher text))))
+          populations (hash-map :populations 
+                                (clean-text (last (re-find populations-matcher text))))
           ; first reg match group is the entire match string
-          contrad (second (re-find contrad-matcher text))
-          txtary (clean-text contrad)
-          outtxt (str/join "\n", txtary)]
-      ;(prn (subs contrad 0 300))
-      (write-to-file outfile usage dosage contrainds precautions reactions interactions populations outtxt)
+          contrad-section (clean-text (second (re-find contrad-matcher text)))]
+      ;(prn " >>>> " (clean-text (first (vals reactions))))
+      ;(prn " ... " contrad-section)
+      ;(write-to-file outfile usage dosage contrainds precautions reactions interactions populations outtxt)
       ; now insert info json sections into es engine
       (insert-drug-doc "zocor" usage dosage contrainds precautions reactions interactions)
       (println "Number of pages" (.getNumberOfPages pd)))))

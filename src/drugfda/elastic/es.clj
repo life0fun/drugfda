@@ -124,8 +124,9 @@
     (esi/create idxname :mappings mappings)))
 
 
+; the order of input info json list must match the order of sections.
 (defn create-drug-doc
-  "create a document for drug index from a list of sections json"
+  "create a document for drug index from a list of sections json, the order of info json must match sections."
   [drugname info]
   (apply merge (hash-map (keyword (nth sections 0)) drugname) info))
 
@@ -158,13 +159,13 @@
 
 
 (defn elastic-query [idxname query process-fn]
-  ; if idxname is unknown, we can use search-all-indexes-and-types.
-  ; query range to be 
+  "search ES all types of an index with query string args"
+  ; if idxname is unknown, we can use search-all-indexes-and-types.  
   ;(connect "localhost" 9200)           
   (let [res (esd/search-all-types idxname   ; drug
               :size 10        ; limits to 10 results
               :query query
-              :sort {"drug" {"order" "desc"}})  ; 
+              :sort {"drug" {"order" "desc"}})  ; order by drug name
          n (esrsp/total-hits res)
          hits (esrsp/hits-from res)  ; searched out docs in hits array
          facets (esrsp/facets-from res)]  ; facets
@@ -174,13 +175,16 @@
 
 (defn process-hits
   "searched out docs are in hits ary, iterate the list"
-  [hits]
-  (prn " === " hits))
+  [section hits]
+  (let [project-sections (map #(get-in % [:_source (keyword section)]) hits)] ; use get-in for nested map values
+    (prn (str " ------ " section " ------ "))
+    (doall (map prn project-sections))))
 
 
 (defn search
-  "search drug index of certain field(section) of the keyword"
+  "search in drug index for drug docs with keywords in field(section)"
   [drugname section qword]
   (let [search-fields (if (nil? section) sections section)
-        qstring (drug-info-query-string search-fields qword)]
-    (elastic-query drug-index-name qstring process-hits)))
+        qstring (drug-info-query-string search-fields qword)
+        process-hits-by-section (partial process-hits section)]
+    (elastic-query drug-index-name qstring process-hits-by-section)))

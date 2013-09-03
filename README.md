@@ -5,6 +5,7 @@ This project is aim to retrieve pdf documents and extract meaningful text inform
 ## Usage
   lein run create-drug-index
   lein run parse pdf-file out-file
+  lein run contraindication zocor liver
 
 
 ## Dependencies with Maven local repo
