@@ -1,5 +1,6 @@
 (ns drugfda.core
-  (:require [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [clojure.pprint :refer :all])
   (:import [java.io FileReader]
            [java.util Map Map$Entry List ArrayList Collection Iterator HashMap])
   ; (:require [clj-redis.client :as redis]) ; bring in redis namespace
@@ -11,10 +12,15 @@
   (:gen-class :main true))
 
 
-(def help-info (list " -------------------------"
+(def help-info (list " ---------------------------------"
                      "lein run parse pdf-file out-file"
                      "lein run create-drug-index"
-                     "lein run contraindication [usage dosage contraindication precaution reaction interaction] drugname keyword"
+                     "lein run contraindication drug-name keyword"
+                     "lein run usage drug-name"
+                     "lein run dosage drug-name"
+                     "lein run precaution drug-name"
+                     "lein run reaction drug-name"
+                     "lein run interaction drug-name"
                 ))
 
 ; convert a pdf file
@@ -32,9 +38,13 @@
 
 ; the main 
 (defn -main [& args]
-  (doall (map prn help-info))
   (case (first args)
+    "help" (doall (map prn help-info))
     "parse" (parse-pdf (second args) (last args))
     "create-drug-index" (es/create-drug-index)
     "contraindication" (search-prescribing-info (second args) "contraindication" (last args))
-    (parse-pdf "./doc/simvastatin.pdf" "./x")))
+    "usage" (search-prescribing-info (second args) "usage" (last args))
+    "precaution" (search-prescribing-info (second args) "precaution" (last args))
+    "interaction" (search-prescribing-info (second args) "interaction" (last args))
+    ;(parse-pdf "./doc/simvastatin.pdf" "./x")
+    (doall (map prn help-info))))  ; default

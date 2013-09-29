@@ -3,10 +3,15 @@
 This project is aim to retrieve pdf documents and extract meaningful text information and store them into ElasticSearch engine for analyze and search.
 
 ## Usage
+  lein run help
   lein run create-drug-index
   lein run parse pdf-file out-file
   lein run contraindication zocor liver
+  lein run usage zocor
 
+  You can also generate standalone jar file.
+  lein uberjar 
+  java -jar target/drugfda-0.1.0-SNAPSHOT-standalone.jar contraindication zocor liver
 
 ## Dependencies with Maven local repo
 

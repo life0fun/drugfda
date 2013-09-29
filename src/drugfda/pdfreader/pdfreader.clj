@@ -1,5 +1,6 @@
 (ns drugfda.pdfreader.pdfreader
-  (:require [clojure.string :as str])  ; clojure str already part of
+  (:require [clojure.string :as str]  ; clojure str already part of
+            [clojure.pprint :as pp])
   (:import [java.io File FileReader]
            [java.util Map Map$Entry List ArrayList Collection Iterator HashMap])
   (:import [org.apache.pdfbox.pdmodel PDDocument]
@@ -11,7 +12,7 @@
   (:require [clj-time.core :as clj-time :exclude [extend]]
             [clj-time.format :refer [parse unparse formatter]]
             [clj-time.coerce :refer [to-long from-long]])
-  (:require [drugfda.elastic.es :refer :all]))
+  (:require [drugfda.elastic.es :as es]))
 
 
 ; this module abstract interface to extract text from pdf
@@ -31,6 +32,10 @@
 
 ; match the long dash line from pdf, not using ^--+, but think more than 3 dash needs to be cleaned.
 (def leading-dash-matcher #"(?smx)(----+[\s\n ]*)")
+; in pdf text, ul list bullet, replace with 
+(def soliddot "•")
+;(def bullet (re-pattern (str "\\n\\s*" • "\\s*\\t")))
+(def bullet (re-pattern (str "\\n\\s*" soliddot "\\s*\\t")))
 
 (defn write-to-file
   "append a list of paragraphs json to an output file, use pr-str to convert json to string"
@@ -54,12 +59,14 @@
             (= 0 (count (str/trim t))))
           (footer? [t]
             (re-find footer-matcher t))]
-    (let [matchedary (str/split-lines matched-text)
+    (let [matchedary (str/split matched-text bullet)
+          ;matchedary (str/split-lines matched-text)
           letterary (map (fn [l] (apply str (filter (fn [c] (and (>= (int c) 32) (<= (int c) 126))) l))) matchedary)
           txtary (filter #(not (or (emptyline? %) (footer? %))) letterary)
-          txtblock (str/join " " txtary)
+          txtblock (str/join soliddot txtary)
           trim-dash (str/replace txtblock leading-dash-matcher "")
           trim-newline (str/replace trim-dash #"[\n\t]" " ")]
+      ;(pp/pprint trim-newline)
       trim-newline)))   ; retrn clean ary
 
 
@@ -70,27 +77,27 @@
               wr (BufferedWriter. (OutputStreamWriter. (FileOutputStream. (File. outfile))))]
     (let [stripper (PDFTextStripper.)
           text (.getText stripper pd)
-          usage (hash-map (keyword (nth sections 1)) 
+          usage (hash-map (keyword (nth es/sections 1))
                           (clean-text (last (re-find usage-matcher text))))
-          dosage (hash-map (keyword (nth sections 2)) 
+          dosage (hash-map (keyword (nth es/sections 2)) 
                            (clean-text (last (re-find dosage-matcher text))))
-          contrainds (hash-map (keyword (nth sections 3)) 
+          contrainds (hash-map (keyword (nth es/sections 3)) 
                                (clean-text (last (re-find contraind-matcher text))))
-          precautions (hash-map (keyword (nth sections 4)) 
+          precautions (hash-map (keyword (nth es/sections 4)) 
                                 (clean-text (last (re-find warnings-matcher text))))
-          reactions (hash-map (keyword (nth sections 5)) 
+          reactions (hash-map (keyword (nth es/sections 5)) 
                               (clean-text (last (re-find reactions-matcher text))))
-          interactions (hash-map (keyword (nth sections 6)) 
+          interactions (hash-map (keyword (nth es/sections 6)) 
                                  (clean-text (last (re-find interactions-matcher text))))
           populations (hash-map :populations 
                                 (clean-text (last (re-find populations-matcher text))))
           ; first reg match group is the entire match string
-          contrad-section (clean-text (second (re-find contrad-matcher text)))]
-      ;(prn " >>>> " (clean-text (first (vals reactions))))
-      ;(prn " ... " contrad-section)
-      ;(write-to-file outfile usage dosage contrainds precautions reactions interactions populations outtxt)
+          contrad-section (clean-text (second (re-find contrad-matcher text)))
+          drugname (re-find #"\w+" (usage :usage))]  ; drug name as 1st word in usage section
+      ;(pp/pprint (str "drug is " drugname contrad-section))
+      ;(write-to-file outfile usage dosage contrainds precautions reactions interactions populations)
       ; now insert info json sections into es engine
-      (insert-drug-doc "zocor" usage dosage contrainds precautions reactions interactions)
+      ;(es/insert-drug-doc drugname usage dosage contrainds precautions reactions interactions)
       (println "Number of pages" (.getNumberOfPages pd)))))
       ;(.write wr outtxt 0 (count outtxt)))))
       ;(.writeText stripper pd wr))))

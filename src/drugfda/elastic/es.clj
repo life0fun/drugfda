@@ -1,5 +1,6 @@
 (ns drugfda.elastic.es
-  (:require [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [clojure.pprint :as pp])
   (:require [clojure.java.jdbc :as sql])
   (:import [java.io FileReader]
            [java.util Map Map$Entry List ArrayList Collection Iterator HashMap])
@@ -77,6 +78,9 @@
 ; For elasticsearch time range query. You can use DateTimeFormatterBuilder, or
 ; always use (formatters :data-time) formatter.
 ;
+
+; XXX temporal test solution
+(def soliddot "•")
 
 ; globals
 (def ^:dynamic *es-conn*)
@@ -175,16 +179,27 @@
 
 (defn process-hits
   "searched out docs are in hits ary, iterate the list"
-  [section hits]
-  (let [project-sections (map #(get-in % [:_source (keyword section)]) hits)] ; use get-in for nested map values
-    (prn (str " ------ " section " ------ "))
-    (doall (map prn project-sections))))
+  [section qword hits]
+  (let [sects (map #(get-in % [:_source (keyword section)]) hits)
+        ; for each projected section content, filter out bullutes
+        lines (map #(str/split % (re-pattern soliddot)) sects)
+        ;bullets (filter #(re-find (re-pattern (if qword qword ".")) %) lines)
+        ;bullets (filter #(str/blank? %) lines)
+        ] ; use get-in for nested map values
+    (pp/pprint (str " ------ " section " ------ "))
+    ;(doall (map prn bullets))
+    (pp/pprint sects)
+    (pp/pprint lines)
+    ))
 
 
+; if query word is nil, return the entire field
 (defn search
   "search in drug index for drug docs with keywords in field(section)"
   [drugname section qword]
   (let [search-fields (if (nil? section) sections section)
         qstring (drug-info-query-string search-fields qword)
-        process-hits-by-section (partial process-hits section)]
+        process-hits-by-section (partial process-hits section qword)]
     (elastic-query drug-index-name qstring process-hits-by-section)))
+
+
