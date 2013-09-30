@@ -152,18 +152,21 @@
     (esd/create drug-index-name drug-index-info-type-name drug-doc)))
 
 
-(defn drug-info-query-string [section keyname]
+(defn drug-info-query-string
   "query term in drug index info mapping in field"
+  [drugname section keyname]
   (let [now (clj-time/now) 
         pre (clj-time/minus now (clj-time/hours 20))  ; from now back 1 days
         nowfmt (clj-time.format/unparse (clj-time.format/formatters :date-time) now)]
-    (q/query-string
-      :fields sections
-      :query (str keyname))))
+    (if keyname
+      ; use bool or dis-max query to form compound query
+      (q/bool :must [(q/field "drug" drugname) (q/field section (str keyname))])
+      (q/query-string :default_field "drug" :query (str drugname)))))
 
 
-(defn elastic-query [idxname query process-fn]
+(defn elastic-query 
   "search ES all types of an index with query string args"
+  [idxname query process-fn]
   ; if idxname is unknown, we can use search-all-indexes-and-types.  
   ;(connect "localhost" 9200)           
   (let [res (esd/search-all-types idxname   ; drug
@@ -177,20 +180,28 @@
     (process-fn hits)))
 
 
+(defn match-list-keyword 
+  "given a list of text, ret a sublist that contains the qword"
+  [text qword]
+  (let [items (filter #(re-find (re-pattern (if qword qword ".")) %) text)]
+    items))
+
 (defn process-hits
-  "searched out docs are in hits ary, iterate the list"
+  "searched out docs are in hits ary [{} {}], iterate the list, ret a map"
   [section qword hits]
-  (let [sects (map #(get-in % [:_source (keyword section)]) hits)
+  (let [sects (map #(get-in % [:_source (keyword section)]) hits) ;(xxx yyy)
+        drugnames (map #(get-in % [:_source :drug]) hits)
+        ; split rets a vector of the splits, turns one item to a list
+        lines (map #(str/split % (re-pattern soliddot)) sects) ;([1 2] [3 4])
         ; for each projected section content, filter out bullutes
-        lines (map #(str/split % (re-pattern soliddot)) sects)
-        ;bullets (filter #(re-find (re-pattern (if qword qword ".")) %) lines)
-        ;bullets (filter #(str/blank? %) lines)
+        bullets (map #(match-list-keyword % qword) lines)
+        sectmap (zipmap drugnames bullets)
         ] ; use get-in for nested map values
     (pp/pprint (str " ------ " section " ------ "))
-    ;(doall (map prn bullets))
-    (pp/pprint sects)
-    (pp/pprint lines)
-    ))
+    (doseq [k (keys sectmap) it (get sectmap k)]
+      (prn (str k "  :  " it)))
+    ;sectmap
+    ))  ; ret sectmap
 
 
 ; if query word is nil, return the entire field
@@ -198,8 +209,10 @@
   "search in drug index for drug docs with keywords in field(section)"
   [drugname section qword]
   (let [search-fields (if (nil? section) sections section)
-        qstring (drug-info-query-string search-fields qword)
-        process-hits-by-section (partial process-hits section qword)]
+        search-key (if (= drugname qword) nil qword)
+        qstring (drug-info-query-string drugname search-fields search-key)
+        process-hits-by-section (partial process-hits section search-key)]
+    ;(prn "search qstring " qstring)
     (elastic-query drug-index-name qstring process-hits-by-section)))
 
 
